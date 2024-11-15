@@ -1,39 +1,65 @@
-import random
-import csv
+from sqlalchemy import create_engine, Column, Integer, String, Float, Text, ForeignKey
+from sqlalchemy.orm import sessionmaker
 import pandas as pd
-import json
+from model import Ville,Annonce,Equipement,AnnonceEquipement,Base
+import os
+from dotenv import load_dotenv
 
-def generate_random_equipment(equipment_list, prob_dist=None, max_items=None):
-    if prob_dist:
-        return random.choices(equipment_list, weights=prob_dist, k=random.randint(1, max_items))
-    else:
-        return random.sample(equipment_list, random.randint(1, max_items))
+load_dotenv()
+# import csv file(Data)
+df = pd.read_csv('project_database/data/aa_output.csv', on_bad_lines='skip', sep=';').reset_index()
+def connectTo_db():
+   USER=os.getenv('USER')
+   DB_NAME=os.getenv('POSTGRES_DB')
+   PORT=os.getenv('PORT')
+   HOST=os.getenv('HOST')
+   DATABASE_URL = f"postgresql://postgres:{os.getenv('PASSWORD')}@{HOST}:{PORT}/{DB_NAME}"
+   engine = create_engine(DATABASE_URL)
+   return engine
 
-def add_equipment_column(df, equipment_list, prob_dist=None):
-    """Adds a new 'Equipement' column as a JSON list of equipment to the dataframe."""
-    # Generate the equipment lists
-    max_items = 4  # We can have a max of all items
-    for _ in range(len(df)):
-     equipment_column = json.dumps(generate_random_equipment(equipment_list, prob_dist, max_items)).removeprefix('""')
-     df['Equipement'] = equipment_column
-     return df
-   
+def creation_table(engine):
+#cree des tableaux qui exist au model.py
+   Base.metadata.create_all(engine)
 
-# Load data
-df = pd.read_csv('project_database/cleaned_file.csv',delimiter=';')
+def insertation_des_tables(engine,df=df):
+ # Configure the session to interact with the database
+ Session = sessionmaker(bind=engine)
+ session = Session()
 
-# List of equipment (with optional probabilities)
-equipment_list = [
-    "Chauffage central", "Lave-vaisselle", "Meuble", "Ascenseur", 
-    "Double vitrage", "Isolation phonique", "Dressing", "Cave", "Grenier", "Four", 
-    "Micro-ondes", "Hotte aspirante", "Plaque de cuisson", "Refrigerateur", "Congelateur", 
-    "Box internet", "Systeme domotique", "Pre-installation pour climatisation reversible", 
-    "Faux-plafond", "Revetement de sol industriel", "eclairage professionnel"
-]
-prob_dist = [0.5] * len(equipment_list)# Add the equipment column
-df = add_equipment_column(df, equipment_list,prob_dist)
+ for index, row in df.iterrows():
+    new_ville = Ville(name_ville=row['localisation'])
+    session.add(new_ville)
+    session.commit() 
 
-# Write to CSV with ; as the delimiter
-df.to_csv('project_database/aa_output.csv', sep=';', index=False, quoting=csv.QUOTE_MINIMAL)
-print("CSV file generated successfully at 'project_database/aa_output.csv'")
-print(df['Equipement'][0])
+    new_annonce = Annonce(
+        titre=row['titre'],
+        prix=row['prix'],
+        chambres=row['chambres'],
+        douches=row['douches'],
+        surface=row['surface'],
+        link=row['URL'],
+        id_ville=new_ville.id_ville 
+    )
+    session.add(new_annonce)
+    session.commit()  
+
+    for equip_name in [
+        "Chauffage central", "Lave-vaisselle", "Meuble", "Ascenseur", 
+        "Double vitrage", "Isolation phonique", "Dressing", "Cave", "Grenier", "Four", 
+        "Micro-ondes", "Hotte aspirante", "Plaque de cuisson", "Refrigerateur", "Congelateur", 
+        "Box internet", "Systeme domotique", "Pre-installation pour climatisation reversible", 
+        "Faux-plafond", "Revetement de sol industriel", "eclairage professionnel"
+    ]:
+        new_equipement = Equipement(name_equipement=equip_name)
+        session.add(new_equipement)
+        session.commit()  # save
+        # Add association in AnnonceEquipement
+        annonce_equipement = AnnonceEquipement(
+            id_annonce=new_annonce.id_annonce,
+            id_equipement=new_equipement.id_equipement
+        )
+        session.add(annonce_equipement)
+        session.commit()
+  
+    session.close()
+
